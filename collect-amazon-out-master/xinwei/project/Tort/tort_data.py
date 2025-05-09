@@ -1,0 +1,92 @@
+import pickle
+import time
+import traceback
+import requests
+from redis.client import StrictRedis
+import datetime
+from xinwei.project.setting import redis_host, redis_port, redis_password
+import logging
+import coloredlogs
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s-%(levelname)s:%(message)s')
+coloredlogs.install(level='INFO')
+
+
+class TortData:
+
+    def __int__(self):
+        self.serve = StrictRedis(host=redis_host, port=redis_port, password=redis_password, db=5)
+        self.brand_tort_url = "http://erp.xinweitech.com/api/tort/findList/1"
+        self.title_tort_url = "http://erp.xinweitech.com/api/tort/findList/2"
+        self.keyword_tort_url = "http://erp.xinweitech.com/api/tort/findList/4"
+        self.category_tort_url = "http://erp.xinweitech.com/api/tort/findList/5"
+
+    @staticmethod
+    def get_tort(name: str, url: str) -> dict:
+        """
+        Get word of Tort information
+
+        Return a dict that contain keyword of Tort
+        """
+        while True:
+            try:
+                logging.info(f'Getting {name}')
+                tort_data = requests.get(url).json()['data']
+                if tort_data:
+                    break
+            except:
+                logging.info(f'Getting {name} word of Tort failed')
+        torts = {}
+        if isinstance(tort_data, list):
+            for data in tort_data:
+                if data.get('value'):
+                    torts[data.get('value')] = data.get('Collect')
+                else:
+                    logging.info(f'Keyword of Tort is empty')
+                    continue
+            if torts:
+                return torts
+            else:
+                logging.info(f'Finally update information of Tort of headline failed, data is empty')
+                return torts
+        else:
+            logging.info(f'Finally update information of Tort of headline failed, it is not iterable')
+            return torts
+
+
+    def update_tort(self) -> None:
+        """
+        Update information of Tort regular
+        """
+        while True:
+            now_time = datetime.datetime.now()
+            logging.info(f"Waiting.......")
+            if now_time.minute in (30, 0):
+                while True:
+                    try:
+                        logging.info("Start update data of Tort")
+                        brand_tort = self.get_tort(name='brand', url=self.brand_tort_url)
+                        pickle_data = pickle.dumps(brand_tort)
+                        self.serve.set('brand_tort', pickle_data)
+                        title_tort = self.get_tort(name='title', url=self.title_tort_url)
+                        pickle_data = pickle.dumps(title_tort)
+                        self.serve.set('title_tort', pickle_data)
+                        keyword_tort = self.get_tort(name='keyword', url=self.keyword_tort_url)
+                        pickle_data = pickle.dumps(keyword_tort)
+                        self.serve.set('keyword_tort', pickle_data)
+                        category_tort = self.get_tort(name='category', url=self.category_tort_url)
+                        pickle_data = pickle.dumps(category_tort)
+                        self.serve.set('classic_tort', pickle_data)
+                        logging.info("update successful！！")
+                        break
+                    except:
+                        logging.info("update failed！！")
+                        logging.info(traceback.format_exc())
+                        continue
+                time.sleep(60-now_time.second)
+            else:
+                time.sleep(60-now_time.second)
+
+
+if __name__ == '__main__':
+    TortData().update_tort()
